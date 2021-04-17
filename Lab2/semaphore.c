@@ -76,7 +76,6 @@ void semaphore_down(struct semaphore *sema)
   enum intr_level old_level = intr_disable();
   while (sema->value == 0)
   {
-    // list_push_back(&sema->waiters, &thread_current()->sharedelem);
     list_insert_ordered(&sema->waiters, &thread_current()->sharedelem, sem_priority_sort, NULL);
     thread_block();
   }
@@ -104,6 +103,8 @@ void semaphore_up(struct semaphore *semaphore)
   semaphore->value++;
   //check whether if a thread with higher priority than new priority exists
   intr_set_level(old_level);
+
+  //yield after incrementing the semaphore value
   struct list_elem *e;
   for (e = list_begin (&semaphore->waiters); e != list_end (&semaphore->waiters);
       e = list_next (e))
@@ -111,11 +112,13 @@ void semaphore_up(struct semaphore *semaphore)
         struct thread *t = list_entry (e, struct thread, sharedelem);
         if(t->priority >= thread_get_priority()){
           thread_yield();  //yield to higher priority thread
+          break;
         }
      }
-    thread_yield();  //yield to higher priority thread
+    thread_yield();  //yield to higher priority thread again
 }
 
+/*function that keeps the threads in sem waiters in order of priority*/
 bool sem_priority_sort (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux UNUSED)
@@ -123,8 +126,8 @@ bool sem_priority_sort (const struct list_elem *a,
       //get thread refereces of a and b
       struct thread *t1 = list_entry(a, struct thread, sharedelem);
       struct thread *t2 = list_entry(b, struct thread, sharedelem);
-      //prefer the thread with higher priority
-      if(t1->priority > t2->priority){
+
+      if(t1->priority > t2->priority){    //prefer the thread with higher priority
         return true;
       }
       return false;
