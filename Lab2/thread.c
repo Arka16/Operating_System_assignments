@@ -247,7 +247,11 @@ thread_create(const char *name, int priority,
 
     /* Add to run queue. */
     thread_unblock(t);
-
+    // if thread on ready queue has higher priority than running thread
+    if(t->priority > thread_get_priority()){
+        thread_yield();  //yield to higher priority thread
+    }
+    list_sort(&ready_list, list_priority_sort,NULL);
     return tid;
 }
 
@@ -369,7 +373,7 @@ thread_yield(void)
 
     old_level = intr_disable();
     if (cur != idle_thread)
-        list_push_back(&ready_list, &cur->sharedelem);
+        list_insert_ordered (&ready_list, &cur->sharedelem, list_priority_sort, NULL);
     cur->status = THREAD_READY;
     schedule();
     intr_set_level(old_level);
