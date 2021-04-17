@@ -251,7 +251,6 @@ thread_create(const char *name, int priority,
     if(t->priority > thread_get_priority()){
         thread_yield();  //yield to higher priority thread
     }
-    list_sort(&ready_list, list_priority_sort,NULL);
     return tid;
 }
 
@@ -373,6 +372,7 @@ thread_yield(void)
 
     old_level = intr_disable();
     if (cur != idle_thread)
+        //keep the ready list sorted by priority
         list_insert_ordered (&ready_list, &cur->sharedelem, list_priority_sort, NULL);
     cur->status = THREAD_READY;
     schedule();
@@ -400,6 +400,16 @@ void
 thread_set_priority(int new_priority)
 {
     thread_current()->priority = new_priority;
+    struct list_elem *e;
+    for (e = list_begin (&ready_list); e != list_end (&ready_list);
+           e = list_next (e))
+        {
+          struct thread *t = list_entry (e, struct thread, sharedelem);
+          if(t->priority > thread_get_priority()){
+            thread_yield();  //yield to higher priority thread
+            return;
+        }
+     }
 }
 
 /* Returns the current thread's priority. */
