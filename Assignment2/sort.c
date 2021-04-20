@@ -23,11 +23,12 @@
 //to store singleThreadedMergeSort params
 typedef struct arg_t{
     int *mem;
-    int L,M,R,num,t1_l, t1_r, t2_l, t2_r;
+    int L,M,R,id;
   } Arg;
 
 
-pthread_t thread_id[THREAD_COUNT];  //initialize all threads required to merge/sort
+
+int thread_num, thread_num2;
 
 /* LEFT index and RIGHT index of the sub-array of ARR[] to be sorted */
 void singleThreadedMergeSort(int arr[], int left, int right)
@@ -48,32 +49,28 @@ void thread_sort(void * arg){
   singleThreadedMergeSort(args->mem, args->L, args->R);  //3,4,5,6 sort corresponding parts of arr
 }
 
-void thread_create(void * arg){
-  Arg * args = (Arg *)arg, args_arr2[2] = {{args->mem, args->t1_l, 0,args->t1_r}, {args->mem,args->t2_l,0,args->t2_r}};
-  //create thread 1 and 2 to sort both halves; thread 1 creates 3 4, thread 2 creates 5 6
-  pthread_create(&thread_id[2+args->num], NULL, (void *)&thread_sort, (void *)&args_arr2[0]);
-  pthread_create(&thread_id[3+args->num], NULL, (void *)&thread_sort, (void *)&args_arr2[1]);
-  //thread 1 waits for 3,4; thread 2 waits for 5,6
-  pthread_join(thread_id[2+args->num],NULL);
-  pthread_join(thread_id[3+args->num],NULL);
-  //thread 1 merges left half, thread 2 merges right half
-  merge(args->mem, args->L, args->M, args->R);
+void thread_create2(void * arg){
+  Arg * args = (Arg *)arg;
+  multiThreadedMergeSort(args->mem, args->L, args->R);
 }
 
 void multiThreadedMergeSort(int arr[], int left, int right)
 {
   // Your code goes here
-
-  //calculate midpoint, middle of left half, and middle of right half
-  int mid = (left + right)/2, quart1 = (left + mid)/2, quart3 = (right + mid)/2;
-  Arg args_arr[CHILD_COUNT] = {{arr, left, quart1, mid, 0, left, quart1, quart1+1, mid}, {arr, mid+1, quart3, right, 2, mid+1, quart3, quart3+1, right}};
-  //Thread 1 creates 3,4, Thread 2 creates 5,6
-  pthread_create(&thread_id[0], NULL, (void * )&thread_create, (void *) {&args_arr[0]});
-  pthread_create(&thread_id[1], NULL, (void * )&thread_create, (void *) {&args_arr[1]});
-  //Wait for threads to finish
-  pthread_join(thread_id[0], NULL);
-  pthread_join(thread_id[1], NULL);
-  //Process merges left and right half
+  pthread_t thread_id[THREAD_COUNT];  //initialize all threads required to merge/sort
+  int mid = (left + right)/2;
+  void * f = thread_num <= 1 ? &thread_create2 : &thread_sort;
+  Arg arg1 = {arr, left, (left + mid)/2, mid, thread_num};
+  //P creates t1, t1 creates t3, t2 creates t5
+  pthread_create(&thread_id[thread_num++], NULL, f, (void *) &arg1);
+  Arg arg2 = {arr, mid + 1, (mid + right)/2, right, thread_num};
+  //P creates t2, t1 creates t4, t2 creates t6
+  pthread_create(&thread_id[thread_num++], NULL, f, (void *) &arg2);
+  //P waits for t1, t1 waits for t3, t2 waits for t5
+  pthread_join(thread_id[arg1.id], NULL);
+  //P waits for t2, t1 waits for t4, t2 waits for t6
+  pthread_join(thread_id[arg2.id], NULL);
+  //Process merges left and right half, t1 merges left-left, left-right, t2 merges right-left, right-right
   merge(arr, left, mid, right);
 }
 
