@@ -221,8 +221,8 @@ thread_create(const char *name, int priority,
 
     /* Initialize thread. */
     init_thread(t, name, priority);
+    t->prev_priority = priority;  //store backup of current priority
     tid = t->tid = allocate_tid();
-
     /* Prepare thread for first run by initializing its stack.
        Do this atomically so intermediate values for the 'stack'
        member cannot be observed. */
@@ -233,7 +233,6 @@ thread_create(const char *name, int priority,
     kf->eip = NULL;
     kf->function = function;
     kf->aux = aux;
-
     /* Stack frame for switch_entry(). */
     ef = alloc_frame(t, sizeof *ef);
     ef->eip = (void (*) (void)) kernel_thread;
@@ -290,6 +289,7 @@ thread_unblock(struct thread *t)
 
     old_level = intr_disable();
     ASSERT(t->status == THREAD_BLOCKED);
+    //insert thread in order by priority
     list_insert_ordered (&ready_list, &t->sharedelem, list_priority_sort, NULL);
     t->status = THREAD_READY;
     intr_set_level(old_level);
@@ -298,14 +298,17 @@ thread_unblock(struct thread *t)
 bool list_priority_sort (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux UNUSED)
-            {
-              struct thread *t1 = list_entry(a, struct thread, sharedelem);
-              struct thread *t2 = list_entry(b, struct thread, sharedelem);
-              if(t1->priority > t2->priority){
-                return true;
-              }
-              return false;
-            }
+{
+    //get thread refereces of a and b
+    struct thread *t1 = list_entry(a, struct thread, sharedelem);
+    struct thread *t2 = list_entry(b, struct thread, sharedelem);
+
+    //prefer the thread with higher priority
+    if(t1->priority > t2->priority){
+        return true;
+    }
+    return false;
+}
 /* Returns the name of the running thread. */
 const char *
 thread_name(void)
@@ -401,13 +404,14 @@ thread_set_priority(int new_priority)
 {
     thread_current()->priority = new_priority;
     struct list_elem *e;
+    //check whether if a thread with higher priority than new priority exists
     for (e = list_begin (&ready_list); e != list_end (&ready_list);
            e = list_next (e))
         {
           struct thread *t = list_entry (e, struct thread, sharedelem);
           if(t->priority > thread_get_priority()){
             thread_yield();  //yield to higher priority thread
-            return;
+            return;          //no longer current thread so return
         }
      }
 }
@@ -465,7 +469,7 @@ idle(void *idle_started_ UNUSED)
     struct semaphore *idle_started = idle_started_;
     idle_thread = thread_current();
     semaphore_up(idle_started);
-
+    list_sort(&ready_list, list_priority_sort, NULL);
     for (;;) {
         /* Let someone else run. */
         intr_disable();

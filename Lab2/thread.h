@@ -89,6 +89,9 @@ struct thread {
     uint8_t *stack;              // Saved stack pointer
     int priority;                // Priority
     struct list_elem allelem;    // For all threads list
+    int prev_priority;        //To store previous priority for priority donation
+    struct lock * lock_temp;
+
 
     // Owned by thread.c. and semephore.c
     struct list_elem sharedelem; // For ready list and semaphore wait list
