@@ -222,6 +222,7 @@ thread_create(const char *name, int priority,
     /* Initialize thread. */
     init_thread(t, name, priority);
     t->prev_priority = priority;  //store backup of current priority
+    t->lock_temp = NULL;
     tid = t->tid = allocate_tid();
     /* Prepare thread for first run by initializing its stack.
        Do this atomically so intermediate values for the 'stack'
@@ -402,6 +403,12 @@ thread_foreach(thread_action_func *func, void *aux)
 void
 thread_set_priority(int new_priority)
 {
+    thread_current()->prev_priority = new_priority;
+    //don't set priority if lock isn't released
+    if(thread_current()->lock_temp != NULL)
+    {
+        return;
+    }
     thread_current()->priority = new_priority;
     struct list_elem *e;
     //check whether if a thread with higher priority than new priority exists

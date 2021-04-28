@@ -41,6 +41,8 @@
 bool lock_priority_sort (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux);
+
+bool lock_list_contains (struct list * lock_list, struct lock *l1);
 /*
  * Initializes LOCK.  A lock can be held by at most a single
  * thread at any given time.  Our locks are not "recursive", that
@@ -82,8 +84,11 @@ void lock_acquire(struct lock *lock)
   ASSERT(lock != NULL);
   ASSERT(!intr_context());
   ASSERT(!lock_held_by_current_thread(lock));
+  //check if the thread that wants to acquire the lock has a higher priority than the lock holder
   if(lock->holder != NULL && thread_get_priority() > lock->holder->priority){
-      lock->holder->lock_temp = lock;
+      lock->holder->lock_temp = lock;  //store lock reference
+      // list_insert_ordered(&lock->holder->lock_list, &lock->lock_elem, lock_priority_sort, NULL );
+      // list_push_front(&lock->holder->lock_list, &lock->lock_elem);
       lock->holder->priority = thread_get_priority(); //donate priority
   }
   semaphore_down(&lock->semaphore);
@@ -101,10 +106,28 @@ void lock_release(struct lock *lock)
 {
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
+  //check if priority was donated to lock holder and if it has the current lock
   if(lock->holder != NULL && lock->holder->lock_temp == lock
      && lock->holder->prev_priority != lock->holder->priority){
     lock->holder->priority = lock->holder->prev_priority;    //restore priority
   }
+  // if(lock->holder != NULL && lock->holder->prev_priority != lock->holder->priority
+  //   && !list_empty(&lock->holder->lock_list) && list_front(&lock->holder->lock_list) != NULL)
+  // {
+  //   lock->holder->priority = lock->holder->prev_priority;    //restore priority
+  //   struct list_elem *e;
+
+  //   for (e = list_begin (&lock->holder->lock_list); e != list_end (&lock->holder->lock_list);
+  //          e = list_next (e))
+  //       {
+  //         struct lock *l = list_entry (e, struct lock, lock_elem);
+  //         if(l == lock) {
+  //           list_remove(&lock->lock_elem); //remove lock reference
+  //           list_sort(&lock->holder->lock_list, lock_priority_sort, NULL);
+  //           break;
+  //         }
+  //       }
+  // }
   lock->holder = NULL;
   semaphore_up(&lock->semaphore);
 }
@@ -117,4 +140,33 @@ bool lock_held_by_current_thread(const struct lock *lock)
 {
   ASSERT(lock != NULL);
   return lock->holder == thread_current();
+}
+
+bool lock_priority_sort (const struct list_elem *a,
+                             const struct list_elem *b,
+                             void *aux UNUSED)
+{
+  struct lock *l1 = list_entry(a, struct lock, lock_elem);
+  struct lock *l2 = list_entry(b, struct lock, lock_elem);
+  struct thread *t1 = l1->holder;
+  struct thread *t2 = l2->holder;
+  if(t1->priority > t2->priority){
+    return true;
+  }
+  return false;
+}
+
+bool lock_list_contains (struct list * lock_list, struct lock *l1)
+{
+    struct list_elem *e;
+
+    for (e = list_begin (lock_list); e != list_end (lock_list);
+           e = list_next (e))
+        {
+          struct lock *l2 = list_entry (e, struct lock, lock_elem);
+          if(l1 == l2){
+            return true;
+          }
+        }
+  return false;
 }
