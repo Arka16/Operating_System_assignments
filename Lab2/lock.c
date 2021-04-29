@@ -116,9 +116,7 @@ void lock_release(struct lock *lock)
   //check if priority was donated to lock holder and if it has the current lock
   if(lock->holder != NULL && lock->holder->prev_priority != lock->holder->priority)
   {
-    if(!list_empty(&lock_list)){
-        if(lock_list_contains(&lock_list, lock)) {
-          list_remove(&lock->lock_elem); //remove lock reference
+    if(!list_empty(&thread_current()->priority_list)){
            struct list_elem *e;
            for (e = list_begin (&lock->holder->priority_list); e != list_end (&lock->holder->priority_list);
                 e = list_next (e))
@@ -127,13 +125,12 @@ void lock_release(struct lock *lock)
               if(t->lock_temp == lock){ //remove thread that got resource
                 list_remove(&t->p_elem);
                 list_sort(&t->priority_list, lock_priority_sort, NULL);
-                break;
               }
             }
-        }
       }
-    if(!list_empty(&lock_list)){
-      lock->holder->priority = list_entry (list_front(&lock->holder->priority_list), struct thread, p_elem)->prev_priority;
+    if(!list_empty(&lock->holder->priority_list)){
+      struct thread *t1 = list_entry (list_front(&lock->holder->priority_list), struct thread, p_elem);
+      lock->holder->priority = t1->priority;
     }
     else{
       lock->holder->priority = lock->holder->prev_priority; //if no more acquires left
