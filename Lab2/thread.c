@@ -132,6 +132,7 @@ thread_init(void)
     list_init(&ready_list);
     list_init(&all_list);
 
+
     /* Set up a thread structure for the running thread. */
     initial_thread = running_thread();
     init_thread(initial_thread, "main", PRI_DEFAULT);
@@ -220,9 +221,8 @@ thread_create(const char *name, int priority,
         return TID_ERROR;
 
     /* Initialize thread. */
+
     init_thread(t, name, priority);
-    t->prev_priority = priority;  //store backup of current priority
-    t->lock_temp = NULL;
     tid = t->tid = allocate_tid();
     /* Prepare thread for first run by initializing its stack.
        Do this atomically so intermediate values for the 'stack'
@@ -405,9 +405,12 @@ thread_set_priority(int new_priority)
 {
     thread_current()->prev_priority = new_priority;
     //don't set priority if lock isn't released
-    if(thread_current()->lock_temp != NULL)
+    if(!list_empty(&thread_current()->priority_list))
     {
         return;
+    }
+    if(new_priority != thread_current()->prev_priority){
+        thread_current()->prev_priority = new_priority;
     }
     thread_current()->priority = new_priority;
     struct list_elem *e;
@@ -544,6 +547,10 @@ init_thread(struct thread *t, const char *name, int priority)
     strlcpy(t->name, name, sizeof t->name);
     t->stack = (uint8_t *) t + PGSIZE;
     t->priority = priority;
+    list_init(&t->priority_list); //initialize list of previous priorites
+    t->lock_temp = NULL;
+    t->lock_acquired = NULL;
+    t->prev_priority = priority;  //store backup of current priority
     t->magic = THREAD_MAGIC;
     list_push_back(&all_list, &t->allelem);
 }

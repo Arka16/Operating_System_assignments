@@ -37,7 +37,7 @@
 #include "threads/semaphore.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
+#include "threads/lock.h"
 bool sem_priority_sort (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux);
@@ -72,10 +72,15 @@ void semaphore_down(struct semaphore *sema)
 {
   ASSERT(sema != NULL);
   ASSERT(!intr_context());
-
   enum intr_level old_level = intr_disable();
   while (sema->value == 0)
   {
+    //if the current thread has a higher priority than the lock holder
+    if(thread_current()->lock_temp!=NULL && thread_current()->lock_temp->holder->priority < thread_get_priority()){
+      struct thread *cur = thread_current(); //allows us to change the current thread to be the lock holder
+      cur->lock_temp->holder->priority = cur->priority; //preserve current thread priority
+      cur = cur->lock_temp->holder; //make current thread the lock holder
+    }
     list_insert_ordered(&sema->waiters, &thread_current()->sharedelem, sem_priority_sort, NULL);
     thread_block();
   }
@@ -95,15 +100,20 @@ void semaphore_up(struct semaphore *semaphore)
 
   ASSERT(semaphore != NULL);
   old_level = intr_disable();
+  struct thread *t1 = thread_current();
   if (!list_empty(&semaphore->waiters))
   {
-    thread_unblock(list_entry(
-      list_pop_front(&semaphore->waiters), struct thread, sharedelem));
+      list_sort(&semaphore->waiters, sem_priority_sort, NULL);
+      t1 = list_entry(list_pop_front(&semaphore->waiters), struct thread, sharedelem);
+      thread_unblock(t1); //wake up next waiting thread
   }
   semaphore->value++;
   //check whether if a thread with higher priority than new priority exists
   intr_set_level(old_level);
-
+  //if current thread has a lower priority than
+  if(thread_get_priority() < t1->priority){  //preempt if unwoke thread has higher thread than current
+    thread_yield();
+  }
   //yield after incrementing the semaphore value
   struct list_elem *e;
   for (e = list_begin (&semaphore->waiters); e != list_end (&semaphore->waiters);
@@ -115,6 +125,9 @@ void semaphore_up(struct semaphore *semaphore)
           break;
         }
      }
+     if(thread_get_priority()!= thread_current()->prev_priority){
+       thread_set_priority(thread_current()->prev_priority);
+     }
     thread_yield();  //yield to higher priority thread again
 }
 
@@ -122,13 +135,13 @@ void semaphore_up(struct semaphore *semaphore)
 bool sem_priority_sort (const struct list_elem *a,
                              const struct list_elem *b,
                              void *aux UNUSED)
-    {
-      //get thread refereces of a and b
-      struct thread *t1 = list_entry(a, struct thread, sharedelem);
-      struct thread *t2 = list_entry(b, struct thread, sharedelem);
+{
+  //get thread refereces of a and b
+  struct thread *t1 = list_entry(a, struct thread, sharedelem);
+  struct thread *t2 = list_entry(b, struct thread, sharedelem);
 
-      if(t1->priority > t2->priority){    //prefer the thread with higher priority
-        return true;
-      }
-      return false;
-    }
+  if(t1->priority > t2->priority){    //prefer the thread with higher priority
+    return true;
+  }
+  return false;
+}
