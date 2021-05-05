@@ -64,6 +64,7 @@ void lock_init(struct lock *lock)
   ASSERT(lock != NULL);
   lock->holder = NULL;
   semaphore_init(&lock->semaphore, 1);
+  lock->donor = NULL;
 }
 
 
@@ -88,6 +89,10 @@ void lock_acquire(struct lock *lock)
       thread_current()->lock_temp = lock; //store lock reference
       list_insert_ordered (&lock->holder->priority_list, &thread_current()->p_elem, lock_priority_sort, NULL); //store priority
       lock->holder->priority = thread_get_priority(); //donate priority
+      if(lock->holder->donee != NULL && lock->holder->priority > lock->holder->donee->priority){
+        lock->holder->donee->priority = lock->holder->priority;
+      }
+      thread_current()->donee = lock->holder; //store donee
   }
   semaphore_down(&lock->semaphore);
   lock->holder = thread_current();

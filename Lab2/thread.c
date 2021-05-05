@@ -552,6 +552,7 @@ init_thread(struct thread *t, const char *name, int priority)
     t->lock_acquired = NULL;
     t->prev_priority = priority;  //store backup of current priority
     t->magic = THREAD_MAGIC;
+    t->donee = NULL;
     list_push_back(&all_list, &t->allelem);
 }
 

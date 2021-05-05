@@ -100,6 +100,7 @@ struct thread {
     struct lock * lock_acquired;
     struct list_elem p_elem;
     struct list priority_list; //list of higher priorities that are donated to holder
+    struct thread * donee;
 
    // Change nothing and add nothing below this line
 #ifdef USERPROG
