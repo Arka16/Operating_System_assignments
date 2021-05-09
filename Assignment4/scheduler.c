@@ -20,6 +20,7 @@ typedef struct thread_extra_t {
   int finish_time;
   int start_time;
   int waiting_time;
+  int remaining_time;
   int tick_count;
   thread_t *t;
 } thread_extra_t;
@@ -40,6 +41,12 @@ static bool inner_equalitor(void *outer, void *inner) {
 static int priority_sort(void *a, void *b) {
         return ((thread_t*)a)->priority - ((thread_t*)b)->priority;
     }
+static int length_sort(void *a, void *b) {
+        return ((thread_t*)a)->length - ((thread_t*)b)->length;
+    }
+static int remaining_sort(void *a, void *b) {
+        return ((thread_extra_t*)a)->remaining_time - ((thread_extra_t*)b)->remaining_time;
+    }
 // static int rr_sort(void *a, void *b) {
 //         return ((thread_extra_t*)a)->priority - ((thread_t*)b)->priority;
 //     }
@@ -59,8 +66,18 @@ void scheduler(enum algorithm algorithm, unsigned int quantum) {
  * tick have been made.
  */
 void tick() {
-    if(alg != FIRST_COME_FIRST_SERVED && alg != ROUND_ROBIN){
+    if(alg == NON_PREEMPTIVE_PRIORITY || alg == PREEMPTIVE_PRIORITY){
       queue_sort(ready_queue, priority_sort);
+    }
+     if(alg == NON_PREEMPTIVE_SHORTEST_JOB_FIRST || alg == PREEMPTIVE_SHORTEST_JOB_FIRST){
+      queue_sort(ready_queue, length_sort);
+    }
+    if(alg == NON_PREEMPTIVE_SHORTEST_REMAINING_TIME_FIRST || alg == PREEMPTIVE_SHORTEST_REMAINING_TIME_FIRST){
+      queue_sort(ready_queue, remaining_sort);
+    }
+    if(alg == NON_PREEMPTIVE_SHORTEST_REMAINING_TIME_FIRST && current_thread != NULL){
+       thread_extra_t *current_rf = queue_find(all_threads,inner_equalitor,current_thread);
+       current_rf->remaining_time--;
     }
     if(alg == ROUND_ROBIN && current_thread != NULL){
       thread_extra_t *t_extra7 = queue_find(all_threads,inner_equalitor,current_thread);
@@ -96,6 +113,20 @@ void tick() {
          cpu_available = false;
     }
   }
+  if((alg ==  PREEMPTIVE_SHORTEST_JOB_FIRST) && queue_size(ready_queue)!= 0){
+      thread_t *t2 = (thread_t*)queue_head(ready_queue);
+      if(current_thread != NULL && !cpu_available && current_thread->length > t2->length){
+         thread_extra_t *t_extra = queue_find(all_threads,inner_equalitor,t2);
+         thread_extra_t *t_extra2 = queue_find(all_threads,inner_equalitor,current_thread);
+         t_extra->waiting_time += sim_time() - t_extra->start_time;
+         t_extra2->start_time = sim_time();
+         queue_enqueue(ready_queue, current_thread);
+         queue_dequeue(ready_queue);
+         sim_dispatch(t2);
+         current_thread = t2;
+         cpu_available = false;
+    }
+  }
   //if cpu available, then get next thread from ready queue, sim dispatch, and list is not empty
   if(cpu_available && queue_size(ready_queue)!=0){
     thread_t *t = (thread_t*)queue_dequeue(ready_queue);
@@ -103,6 +134,9 @@ void tick() {
     t_extra->waiting_time += sim_time() - t_extra->start_time;
     if(alg == ROUND_ROBIN){
       t_extra->tick_count = 0;
+    }
+    if(alg == NON_PREEMPTIVE_SHORTEST_REMAINING_TIME_FIRST || alg == PREEMPTIVE_SHORTEST_REMAINING_TIME_FIRST){
+      t_extra->remaining_time = t->length;
     }
     sim_dispatch(t);
     current_thread = t;
