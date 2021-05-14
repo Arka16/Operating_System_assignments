@@ -83,57 +83,56 @@ push_command(const char *cmdline UNUSED, void **esp)
 
   // split  cmdline by spaces
   // void *fake_address = "fake_address";
-  int len = strlen(cmdline) + 1; //number of bytes
+  char *str = "pointer";
+  // char *str2 = "pointer2";
+  int arg_count = 0;
+  char *token_arg = strtok_r((char *)cmdline, (const char *) " " , &str); //get first
+  char *token = strtok_r((char *)cmdline, (const char *) " " , &str); //get first
+  int len = strlen(token) + 1; //number of bytes
+  int i = 0;
   *esp -=len; //move pointer down
-  memcpy(*esp, cmdline, len); //push string
-  char* temp_add = *esp;  //store string address
+  // printf("TOKEN IS %s\n", token);
+  while(token_arg != NULL){
+    arg_count++;
+    token_arg = strtok_r(NULL, (const char *) " ", &str); //go to next token
+  }
+  int *add_arr[arg_count+1];
+  //push strings
+  while(token != NULL){
+    memcpy(*esp, token, len); //push string
+    add_arr[i] = *esp;  //store string address
+    i++;
+    token = strtok_r(NULL, (const char *) " ", &str); //go to next token
+    if(token != NULL){
+      len = strlen(token)+1;
+      *esp -=len; //move pointer down
+    }
+  }
   // printf("String copied: 0x%08x\n", (unsigned int)*esp);
   *esp = (void *)((unsigned int)(*esp) & 0xfffffffc); //word allign
   // printf("Word allign: 0x%08x\n", (unsigned int)*esp);
   *esp -= 4; //move down 4
   // printf("argv[1]: 0x%08x\n", (unsigned int)*esp);
   *((int *)*esp) = 0;
-  *esp -= 4;
+  // *esp -= 4;
   // printf("argv[0] 0x%08x\n", (unsigned int)*esp);
-  *((char **)*esp) = temp_add;
-  temp_add = *esp;
+
+  //store addresses
+  for(int j=0; j<arg_count; j++){
+     *esp -= 4;
+    *((int**)*esp) = add_arr[j];
+    add_arr[arg_count] = *esp;
+  }
+  //push addresses
   *esp -= 4;
-  *((char **)*esp) = temp_add;
+  *((int**)*esp) = add_arr[arg_count];
   // printf("argv: 0x%08x\n", (unsigned int)*esp);
   *esp -= 4;
-  *((int *)*esp) = 1;
+  //push argv address
+  *((int *)*esp) = arg_count;
   // printf("argc: 0x%08x\n", (unsigned int)*esp);
   *esp-=4;
   *((int *)*esp) = 0;
-  // printf("fake_return: 0x%08x\n", (unsigned int)*esp);
-
-
-
-
-  // *esp -= 4;
-  // printf("Base Address: 0x%08x\n", (unsigned int)*esp);
-  // void * fake_address = 0;
-  // len = strlen(fake_address)+1;
-  // *esp -= len;
-  // memcpy(*esp, &fake_address, len);
-  // *esp-=4;
-  // void * fake_address = NULL;
-  // len = strlen(fake_address) + 1; //number of bytes
-  // *esp -=len; //move pointer down
-  // memcpy(*esp, &fake_address, len); //copy token into esp
-  // *esp -= 4;
-
-
-
-
-
-  // char *token = strtok_r((char *)cmdline, (const char *) " " , NULL); //get first token
-  // while(token != NULL){
-  //   int len = strlen(token) + 1; //number of bytes
-  //   memcpy(*esp, token, len); //copy token into esp
-  //   *esp -=len; //move pointer down
-  //   token = strtok_r(NULL, (const char *) " ", NULL); //go to next token
-  // }
 }
 
 /*
