@@ -64,7 +64,7 @@
  * aligned with the stack pointer ESP. Should only be called after the ELF
  * format binary has been loaded into the heap by elf_load();
  */
-// struct semaphore sem;
+struct semaphore sem;
 static void
 push_command(const char *cmdline UNUSED, void **esp)
 {
@@ -127,7 +127,6 @@ static void
 start_process(void *cmdline)
 {
   // Initialize interrupt frame and load executable.
-  // semaphore_down(&sem);
   struct intr_frame pif;
   memset(&pif, 0, sizeof pif);
 
@@ -168,7 +167,6 @@ tid_t
 process_execute(const char *cmdline)
 {
   // Make a copy of CMDLINE to avoid a race condition between the caller and load()
-  // semaphore_init(&sem, 1);
   char *cmdline_copy = palloc_get_page(0);
   if (cmdline_copy == NULL)
     return TID_ERROR;
@@ -180,9 +178,9 @@ process_execute(const char *cmdline)
   strlcpy(cmdline_copy2, cmdline, len);
   char *token = strtok_r((char *)cmdline_copy2, (const char *) " " , &str); //get first
   // Create a Kernel Thread for the new process
+  semaphore_init(&sem, 0);
   tid_t tid = thread_create(token, PRI_DEFAULT, start_process, cmdline_copy);
-  // semaphore_up(&sem);
-  timer_sleep(100);
+  // timer_sleep(100);
 
   // CSE130 Lab 3 : The "parent" thread immediately returns after creating
   // the child. To get ANY of the tests passing, you need to synchronise the
@@ -203,6 +201,7 @@ process_execute(const char *cmdline)
 int
 process_wait(tid_t child_tid UNUSED)
 {
+  semaphore_down(&sem);
   return -1;
 }
 
@@ -228,6 +227,7 @@ process_exit(void)
     cur->pagedir = NULL;
     pagedir_activate(NULL);
     pagedir_destroy(pd);
+    semaphore_up(&sem);
   }
 }
 
