@@ -57,12 +57,14 @@
 #include "userprog/syscall.h"
 #include "userprog/process.h"
 #include "devices/timer.h"
+#include "threads/semaphore.h"
 
 /*
  * Push the command and arguments found in CMDLINE onto the stack, word
  * aligned with the stack pointer ESP. Should only be called after the ELF
  * format binary has been loaded into the heap by elf_load();
  */
+// struct semaphore sem;
 static void
 push_command(const char *cmdline UNUSED, void **esp)
 {
@@ -80,57 +82,38 @@ push_command(const char *cmdline UNUSED, void **esp)
   // describes what you're doing, and why.
   //
   // If nothing else, it'll remind you what you did when it doesn't work :)
-
-  // split  cmdline by spaces
-  // void *fake_address = "fake_address";
-  char *str = "pointer";
-  // char *str2 = "pointer2";
+  char *str = NULL;
+  const char * delim = " "; //split by spaces
   int arg_count = 0;
-  char *token_arg = strtok_r((char *)cmdline, (const char *) " " , &str); //get first
-  char *token = strtok_r((char *)cmdline, (const char *) " " , &str); //get first
-  int len = strlen(token) + 1; //number of bytes
-  int i = 0;
-  *esp -=len; //move pointer down
-  // printf("TOKEN IS %s\n", token);
-  while(token_arg != NULL){
-    arg_count++;
-    token_arg = strtok_r(NULL, (const char *) " ", &str); //go to next token
+  char **tokens = (char **) palloc_get_page(0);
+  for(char *token_arg = strtok_r((char *)cmdline, delim, &str);
+      token_arg != NULL; token_arg = strtok_r(NULL, delim, &str)){
+      tokens[arg_count] = token_arg;
+      arg_count++; //count arguments
   }
-  int *add_arr[arg_count+1];
-  //push strings
-  while(token != NULL){
-    memcpy(*esp, token, len); //push string
-    add_arr[i] = *esp;  //store string address
-    i++;
-    token = strtok_r(NULL, (const char *) " ", &str); //go to next token
-    if(token != NULL){
-      len = strlen(token)+1;
-      *esp -=len; //move pointer down
-    }
+  void *add_arr[arg_count+1];
+  for(int j = 0; j<arg_count; j++){
+    int len = strlen(tokens[j]) + 1;
+    *esp -=len; //move pointer down
+    memcpy(*esp, tokens[j], len); //push string
+    add_arr[j] = *esp;  //store string address
   }
-  // printf("String copied: 0x%08x\n", (unsigned int)*esp);
+  palloc_free_page(tokens);
   *esp = (void *)((unsigned int)(*esp) & 0xfffffffc); //word allign
-  // printf("Word allign: 0x%08x\n", (unsigned int)*esp);
   *esp -= 4; //move down 4
-  // printf("argv[1]: 0x%08x\n", (unsigned int)*esp);
   *((int *)*esp) = 0;
-  // *esp -= 4;
-  // printf("argv[0] 0x%08x\n", (unsigned int)*esp);
-
   //store addresses
-  for(int j=0; j<arg_count; j++){
-     *esp -= 4;
-    *((int**)*esp) = add_arr[j];
-    add_arr[arg_count] = *esp;
+  for(int k=arg_count-1; k>=0; k--){
+    *esp -= 4;
+    *((void**)*esp) = add_arr[k];
   }
   //push addresses
+  add_arr[arg_count] = *esp;
   *esp -= 4;
-  *((int**)*esp) = add_arr[arg_count];
-  // printf("argv: 0x%08x\n", (unsigned int)*esp);
+  *((void**)*esp) = add_arr[arg_count];
   *esp -= 4;
   //push argv address
   *((int *)*esp) = arg_count;
-  // printf("argc: 0x%08x\n", (unsigned int)*esp);
   *esp-=4;
   *((int *)*esp) = 0;
 }
@@ -144,6 +127,7 @@ static void
 start_process(void *cmdline)
 {
   // Initialize interrupt frame and load executable.
+  // semaphore_down(&sem);
   struct intr_frame pif;
   memset(&pif, 0, sizeof pif);
 
@@ -151,7 +135,12 @@ start_process(void *cmdline)
   pif.cs = SEL_UCSEG;
   pif.eflags = FLAG_IF | FLAG_MBS;
 
-  bool loaded = elf_load(cmdline, &pif.eip, &pif.esp);
+  char *str = NULL;
+  char *cmdline_copy = palloc_get_page(0);
+  int len = strlen(cmdline) +1;
+  strlcpy(cmdline_copy, cmdline, len);
+  char *token = strtok_r((char *)cmdline_copy, (const char *) " " , &str); //get first
+  bool loaded = elf_load(token, &pif.eip, &pif.esp);
   if (loaded)
     push_command(cmdline, &pif.esp);
 
@@ -179,14 +168,20 @@ tid_t
 process_execute(const char *cmdline)
 {
   // Make a copy of CMDLINE to avoid a race condition between the caller and load()
+  // semaphore_init(&sem, 1);
   char *cmdline_copy = palloc_get_page(0);
   if (cmdline_copy == NULL)
     return TID_ERROR;
 
   strlcpy(cmdline_copy, cmdline, PGSIZE);
-
+  char *str = NULL;
+  char *cmdline_copy2 = palloc_get_page(0);
+  int len = strlen(cmdline) +1;
+  strlcpy(cmdline_copy2, cmdline, len);
+  char *token = strtok_r((char *)cmdline_copy2, (const char *) " " , &str); //get first
   // Create a Kernel Thread for the new process
-  tid_t tid = thread_create(cmdline, PRI_DEFAULT, start_process, cmdline_copy);
+  tid_t tid = thread_create(token, PRI_DEFAULT, start_process, cmdline_copy);
+  // semaphore_up(&sem);
   timer_sleep(100);
 
   // CSE130 Lab 3 : The "parent" thread immediately returns after creating
