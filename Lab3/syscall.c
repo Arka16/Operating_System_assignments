@@ -34,7 +34,7 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include <list.h>
-
+#include <string.h>
 #include "devices/shutdown.h"
 #include "devices/input.h"
 #include "filesys/filesys.h"
@@ -77,7 +77,12 @@ static uint32_t sys_write(int fd, const void *buffer, unsigned size)
   umem_check((const uint8_t*) buffer + size - 1);
 
   int ret = -1;
-
+  if(size == 0){
+    return 0;
+  }
+  if(buffer== NULL || umem_get((uint8_t*)buffer) == -1){
+    sys_exit(-1);
+  }
   if (fd == 1) { // write to stdout
     putbuf(buffer, size);
     ret = size;
@@ -101,6 +106,8 @@ static void write_handler(struct intr_frame *f)
 
 /****************** System Call Handler ********************/
 
+
+/*For create reqs*/
 static bool sys_create(char *fname, int isize){
   //If NULL or bad pointer, terminate thread
   if(fname == NULL || (umem_get((uint8_t*)fname) == -1)){
@@ -122,6 +129,78 @@ static void create_handler(struct intr_frame *f)
   f->eax = sys_create((char *)fname, isize);
 }
 
+/*FOR OPEN REQS*/
+static uint32_t sys_open(char *fname, int fd){
+  //If NULL or bad pointer, terminate thread
+  if(fname == NULL || umem_get((uint8_t*)fname) == -1){
+    sys_exit(-1);
+  }
+  if(strlen(fname)==0){ //if empty
+    return -1;
+  }
+
+  struct file * f = filesys_open ((const char *) fname);
+
+  if(f==NULL){ //if file doesn't exist
+     return -1;
+  }
+  int len = sizeof(thread_current()->files);
+  for(int i = 0; i < len; i++){
+    if(thread_current()->files[i]== 0){
+      thread_current()->files[i] = f; //store file pointer
+      break;
+    }
+  }
+  return fd; //return file descriptor
+}
+
+static void open_handler(struct intr_frame *f)
+{
+  const char *fname;
+  int fd;
+
+  umem_read(f->esp + 4, &fname, sizeof(fname));
+  umem_read(f->esp + 8, &fd, sizeof(fd));
+
+  f->eax = sys_open((char *)fname, fd);
+}
+
+/*FOR READ REQS*/
+static uint32_t sys_read(int fd, const void *buffer, unsigned size){
+  umem_check((const uint8_t*) buffer);
+  umem_check((const uint8_t*) buffer + size - 1);
+  int ret = -1;
+  if(size == 0){
+    return 0;
+  }
+  if(buffer== NULL || umem_get((uint8_t*)buffer) == -1){
+    sys_exit(-1);
+  }
+  if(strlen(buffer)==0){ //if empty
+    return -1;
+  }
+  if (fd == 1) { // read to stdout
+    putbuf(buffer, size);
+    ret = size;
+  }
+  struct file * f = thread_current()->files[fd];
+  file_read(f, (void*)buffer, size-1);
+  return (uint32_t) ret;
+}
+static void read_handler(struct intr_frame *f)
+{
+    int fd;
+    const void *buffer;
+    unsigned size;
+
+    umem_read(f->esp + 4, &fd, sizeof(fd));
+    umem_read(f->esp + 8, &buffer, sizeof(buffer));
+    umem_read(f->esp + 12, &size, sizeof(size));
+
+    f->eax = size;
+}
+
+/*****************************************************************************************/
 static void
 syscall_handler(struct intr_frame *f)
 {
@@ -140,6 +219,14 @@ syscall_handler(struct intr_frame *f)
     create_handler(f);
     break;
 
+  case SYS_OPEN:
+    open_handler(f);
+    break;
+
+  case SYS_READ:
+    read_handler(f);
+    break;
+
   case SYS_HALT:
     shutdown_power_off();
     break;
@@ -150,6 +237,18 @@ syscall_handler(struct intr_frame *f)
 
   case SYS_WRITE:
     write_handler(f);
+    break;
+
+  case SYS_CLOSE:
+    // write_handler(f);
+    break;
+
+   case SYS_EXEC:
+    // write_handler(f);
+    break;
+
+   case SYS_WAIT:
+    // write_handler(f);
     break;
 
   default:
