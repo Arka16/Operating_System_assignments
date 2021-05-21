@@ -50,6 +50,7 @@
 #include "userprog/process.h"
 #include "userprog/umem.h"
 
+
 /****************** System Call Implementations ********************/
 
 /*
@@ -73,21 +74,26 @@ static void exit_handler(struct intr_frame *f)
  */
 static uint32_t sys_write(int fd, const void *buffer, unsigned size)
 {
-  umem_check((const uint8_t*) buffer);
-  umem_check((const uint8_t*) buffer + size - 1);
+  // umem_check((const uint8_t*) buffer);
+  // umem_check((const uint8_t*) buffer + size - 1);
 
   int ret = -1;
   if(size == 0){
     return 0;
   }
+  //check for bad pointer and if buffer is valid
   if(buffer== NULL || umem_get((uint8_t*)buffer) == -1){
     sys_exit(-1);
   }
   if (fd == 1) { // write to stdout
     putbuf(buffer, size);
+    // file_write(thread_current()->files[fd], (void *)buffer, size);
     ret = size;
   }
-
+  if(strlen(buffer)==0){ //return 0 if empty
+    return 0;
+  }
+  ret = size;
   return (uint32_t) ret;
 }
 
@@ -145,9 +151,10 @@ static uint32_t sys_open(char *fname, int fd){
      return -1;
   }
   int len = sizeof(thread_current()->files);
-  for(int i = 0; i < len; i++){
-    if(thread_current()->files[i]== 0){
-      thread_current()->files[i] = f; //store file pointer
+  for(int i = 3; i < len; i++){
+    if(thread_current()->files[i]== NULL){
+      fd = i;
+      thread_current()->files[fd] = f; //store file pointer
       break;
     }
   }
@@ -158,7 +165,6 @@ static void open_handler(struct intr_frame *f)
 {
   const char *fname;
   int fd;
-
   umem_read(f->esp + 4, &fname, sizeof(fname));
   umem_read(f->esp + 8, &fd, sizeof(fd));
 
@@ -167,26 +173,25 @@ static void open_handler(struct intr_frame *f)
 
 /*FOR READ REQS*/
 static uint32_t sys_read(int fd, const void *buffer, unsigned size){
-  umem_check((const uint8_t*) buffer);
-  umem_check((const uint8_t*) buffer + size - 1);
   int ret = -1;
+  //if buffer empty
   if(size == 0){
     return 0;
   }
-  if(buffer== NULL || umem_get((uint8_t*)buffer) == -1){
-    sys_exit(-1);
-  }
-  if(strlen(buffer)==0){ //if empty
+  int len = size;
+  if(fd >len || fd < 0){ //checks if fd is valid
     return -1;
   }
-  if (fd == 1) { // read to stdout
-    putbuf(buffer, size);
-    ret = size;
+  //check for bad pointer and if buffer is valid and file not null
+  if(buffer== NULL || umem_get((uint8_t*)buffer) == -1 || thread_current()->files[fd] == NULL){
+    sys_exit(-1);
   }
-  struct file * f = thread_current()->files[fd];
-  file_read(f, (void*)buffer, size-1);
+  //read the file
+  file_read(thread_current()->files[fd], (void*)buffer, size);
+  ret = size;
   return (uint32_t) ret;
 }
+
 static void read_handler(struct intr_frame *f)
 {
     int fd;
@@ -196,8 +201,29 @@ static void read_handler(struct intr_frame *f)
     umem_read(f->esp + 4, &fd, sizeof(fd));
     umem_read(f->esp + 8, &buffer, sizeof(buffer));
     umem_read(f->esp + 12, &size, sizeof(size));
+    f->eax = sys_read(fd, buffer, size);
+}
+static void filesize_handler(struct intr_frame *f)
+{
+    int fd;
+    umem_read(f->esp + 4, &fd, sizeof(fd));
+    f->eax = file_length(thread_current()->files[fd]);
+}
 
-    f->eax = size;
+static void close_handler(struct intr_frame *f)
+{
+    int fd;
+    const void *buffer;
+    unsigned size;
+
+    umem_read(f->esp + 4, &fd, sizeof(fd));
+    umem_read(f->esp + 8, &buffer, sizeof(buffer));
+    umem_read(f->esp + 12, &size, sizeof(size));
+    int len = sizeof(thread_current()->files[fd]);
+    if(fd <len && fd > 0){ //checks if fd is valid
+      file_close(thread_current()->files[fd]);
+      thread_current()->files[fd] = NULL; //delete file
+    }
 }
 
 /*****************************************************************************************/
@@ -240,7 +266,7 @@ syscall_handler(struct intr_frame *f)
     break;
 
   case SYS_CLOSE:
-    // write_handler(f);
+    close_handler(f);
     break;
 
    case SYS_EXEC:
@@ -250,7 +276,9 @@ syscall_handler(struct intr_frame *f)
    case SYS_WAIT:
     // write_handler(f);
     break;
-
+   case SYS_FILESIZE:
+    filesize_handler(f);
+    break;
   default:
     printf("[ERROR] system call %d is unimplemented!\n", syscall);
     thread_exit();
