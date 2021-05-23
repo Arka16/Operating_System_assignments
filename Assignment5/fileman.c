@@ -209,26 +209,26 @@ int filter(const struct dirent * entry){
   return strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..");
 }
 
-void get_dir(int fd, const char *dname, int indent, char * entry) {
-  char path [100];
-  // dprintf(fd, "%s\n", entry); //write to fd
-  strcpy(path, dname);
-  printf("PATH IS %s\n", path);
+void get_dir(int fd, const char *dname, int indent, char* path) {
   struct dirent** namelist;
-  int numFiles = scandir(dname, &namelist, filter, alphasort); //get list and sort alphabetically
+  int numFiles = scandir(path, &namelist, filter, alphasort); //get list and sort alphabetically
   for(int i = 0; i< numFiles; i++){
-    for(int j = 0; j < indent; j++){
+    for(int j = 0; j < indent+4; j++){
        dprintf(fd, " "); //write indents
     }
-    dprintf(fd, "    %s\n", namelist[i]->d_name); //write entry names and new line
+    dprintf(fd, "%s\n", namelist[i]->d_name); //write entry names and new line
     if(namelist[i]->d_type == DT_DIR){  //if directory
-      strcat(path,  "/");
-      strcat(path, namelist[i]->d_name);
-      get_dir(fd, (const char *) path, indent+4 , (char *) namelist[i]->d_name);
+      char *path_temp = malloc((strlen(path)+1 + strlen(namelist[i]->d_name)+1));
+      //make new path
+      strcpy(path_temp,  (char *) path);
+      strcat(path_temp,  "/");
+      strcat(path_temp, namelist[i]->d_name);
+      get_dir(fd, namelist[i]->d_name, indent+4, path_temp);
+      free(path_temp);
     }
     free(namelist[i]);
   }
-  if(numFiles != -1){
+  if(numFiles != -1){   //only free if scandir doesn't result in an error
     free(namelist);
    }
 }
@@ -236,7 +236,7 @@ void get_dir(int fd, const char *dname, int indent, char * entry) {
 void fileman_dir(const int fd, const char *dname)
 {
   dprintf(fd, "%s\n", dname); //write to fd
-  get_dir(fd,dname,0,(char *) dname);
+  get_dir(fd,dname,0, (char*)dname);
 }
 
 /*
@@ -265,6 +265,34 @@ void fileman_dir(const int fd, const char *dname)
  *       │       └── wy
  *       └── tcx
  */
+
+void get_tree(int fd, const char *dname, int indent, char* path) {
+  struct dirent** namelist;
+  int numFiles = scandir(path, &namelist, filter, alphasort); //get list and sort alphabetically
+  for(int i = 0; i< numFiles; i++){
+    for(int j = 0; j < indent+4; j++){
+       dprintf(fd, " "); //write indents
+    }
+    dprintf(fd, HOR);
+    dprintf(fd, "%s\n", namelist[i]->d_name); //write entry names and new line
+    if(namelist[i]->d_type == DT_DIR){  //if directory
+      char *path_temp = malloc((strlen(path)+1 + strlen(namelist[i]->d_name)+1) * sizeof(char*));
+      //make new path
+      strcpy(path_temp,  (char *) path);
+      strcat(path_temp,  "/");
+      strcat(path_temp, namelist[i]->d_name);
+      get_dir(fd, namelist[i]->d_name, indent+4, path_temp);
+      free(path_temp);
+    }
+    free(namelist[i]);
+  }
+  if(numFiles != -1){
+    free(namelist);
+   }
+}
+
 void fileman_tree(const int fd, const char *dname)
 {
+  dprintf(fd, "%s\n", dname); //write to fd
+  get_tree(fd,dname,0, (char*)dname);
 }
