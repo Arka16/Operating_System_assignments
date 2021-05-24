@@ -38,6 +38,7 @@ https://man7.org/linux/man-pages/man3/readdir.3.html
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
 /*
  * Extended ASCII box drawing characters:
@@ -266,14 +267,37 @@ void fileman_dir(const int fd, const char *dname)
  *       └── tcx
  */
 
-void get_tree(int fd, const char *dname, int indent, char* path) {
+
+//global bitmask array to handle VER/space logic
+bool bitmask [100];
+
+void drawTree(int fd, const char *dname, int indent, char* path) {
   struct dirent** namelist;
   int numFiles = scandir(path, &namelist, filter, alphasort); //get list and sort alphabetically
   for(int i = 0; i< numFiles; i++){
-    for(int j = 0; j < indent+4; j++){
-       dprintf(fd, " "); //write indents
+    for(int j = 0; j < indent+4; j++){  // j greater than equal to indent, take care of TEE and ELB, else, know VERT/SPACE
+       if(j == indent){    //last 4 spaces check TEE vs ELB logic
+            if(i== numFiles-1){    //if last entry then ELB
+              dprintf(fd, ELB);
+            }
+            else{
+               dprintf(fd, TEE); //else print TEE
+            }
+            //print 2 HORs and a space to match style
+            dprintf(fd, HOR);
+            dprintf(fd, HOR);
+            dprintf(fd, " ");
+            break;  //no more spaces/verticals needed
+        }
+        else{
+          if(bitmask[j]== true){ //if not last file vertical line
+            dprintf(fd, VER);
+          }
+          else{
+            dprintf(fd, " "); //if last file and more directories incoming, add spaces
+          }
+        }
     }
-    dprintf(fd, HOR);
     dprintf(fd, "%s\n", namelist[i]->d_name); //write entry names and new line
     if(namelist[i]->d_type == DT_DIR){  //if directory
       char *path_temp = malloc((strlen(path)+1 + strlen(namelist[i]->d_name)+1) * sizeof(char*));
@@ -281,10 +305,16 @@ void get_tree(int fd, const char *dname, int indent, char* path) {
       strcpy(path_temp,  (char *) path);
       strcat(path_temp,  "/");
       strcat(path_temp, namelist[i]->d_name);
-      get_dir(fd, namelist[i]->d_name, indent+4, path_temp);
+      if(i == numFiles -1){
+        bitmask[indent] = false;  //space
+      }
+      else{
+        bitmask[indent] = true;   //vertical
+      }
+      drawTree(fd, namelist[i]->d_name, indent+4, path_temp);
       free(path_temp);
     }
-    free(namelist[i]);
+    free(namelist[i]); //free every malloced elem
   }
   if(numFiles != -1){
     free(namelist);
@@ -294,5 +324,5 @@ void get_tree(int fd, const char *dname, int indent, char* path) {
 void fileman_tree(const int fd, const char *dname)
 {
   dprintf(fd, "%s\n", dname); //write to fd
-  get_tree(fd,dname,0, (char*)dname);
+  drawTree(fd,dname,0, (char*)dname);
 }
