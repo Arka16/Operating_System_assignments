@@ -142,7 +142,7 @@ start_process(void *cmdline)
   bool loaded = elf_load(token, &pif.eip, &pif.esp);
   if (loaded)
     push_command(cmdline, &pif.esp);
-
+  // semaphore_up(&sem);
   palloc_free_page(cmdline);
 
   if (!loaded)
@@ -178,10 +178,10 @@ process_execute(const char *cmdline)
   strlcpy(cmdline_copy2, cmdline, len);
   char *token = strtok_r((char *)cmdline_copy2, (const char *) " " , &str); //get first
   // Create a Kernel Thread for the new process
-  semaphore_init(&sem, 0);
-  tid_t tid = thread_create(token, PRI_DEFAULT, start_process, cmdline_copy);
-  // timer_sleep(100);
+  semaphore_init(&sem, 0); //init sem each time thread is created
 
+  tid_t tid = thread_create(token, PRI_DEFAULT, start_process, cmdline_copy);
+  semaphore_down(&sem);
   // CSE130 Lab 3 : The "parent" thread immediately returns after creating
   // the child. To get ANY of the tests passing, you need to synchronise the
   // activity of the parent and child threads.
@@ -201,7 +201,10 @@ process_execute(const char *cmdline)
 int
 process_wait(tid_t child_tid UNUSED)
 {
-  semaphore_down(&sem);
+  // if(thread_current() != NULL){
+  //   semaphore_down(thread_current()->sem); //wait before thread in critical section finishes
+  // }
+  // semaphore_down(&sem); //wait before thread in critical section finishes
   return -1;
 }
 
@@ -227,7 +230,8 @@ process_exit(void)
     cur->pagedir = NULL;
     pagedir_activate(NULL);
     pagedir_destroy(pd);
-    semaphore_up(&sem);
+    semaphore_up(&sem);  //let next thread run
+    // semaphore_up(cur->sem); //up semaphore to allow next thread/process in critical section
   }
 }
 

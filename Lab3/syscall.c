@@ -81,17 +81,20 @@ static uint32_t sys_write(int fd, const void *buffer, unsigned size)
   if(size == 0){
     return 0;
   }
+  int len = size;
+  if(fd >len || fd < 0){ //checks if fd is valid
+    return -1;
+  }
   //check for bad pointer and if buffer is valid
   if(buffer== NULL || umem_get((uint8_t*)buffer) == -1){
     sys_exit(-1);
   }
   if (fd == 1) { // write to stdout
     putbuf(buffer, size);
-    // file_write(thread_current()->files[fd], (void *)buffer, size);
     ret = size;
   }
-  if(strlen(buffer)==0){ //return 0 if empty
-    return 0;
+  if(fd > 2){
+     file_write(thread_current()->files[fd], (void *)buffer, size); //write contents to file
   }
   ret = size;
   return (uint32_t) ret;
