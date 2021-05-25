@@ -64,11 +64,11 @@
  * aligned with the stack pointer ESP. Should only be called after the ELF
  * format binary has been loaded into the heap by elf_load();
  */
-// struct semaphore sem;
+
 
 typedef struct arg_t{
-    struct semaphore sema;
-    void * cmd_line;
+    struct semaphore* sema;
+    char* cmd_line;
   } Arg;
 
 static void
@@ -124,6 +124,7 @@ push_command(const char *cmdline UNUSED, void **esp)
   *((int *)*esp) = 0;
 }
 
+
 /*
  * A thread function to load a user process and start it running.
  * CMDLINE is assumed to contain an executable file name with no arguments.
@@ -135,6 +136,7 @@ start_process(void *cmdline)
 {
   // Initialize interrupt frame and load executable.
   Arg* new_param = (Arg *)cmdline;
+  // printf("COMM is %s\n",   new_param->cmd_line);
   struct intr_frame pif;
   memset(&pif, 0, sizeof pif);
 
@@ -144,34 +146,28 @@ start_process(void *cmdline)
 
   char *str = NULL;
   char *cmdline_copy = palloc_get_page(0);
-  int len = strlen(new_param->cmd_line) +1;
-  strlcpy(cmdline_copy,  new_param->cmd_line, len);
+  int len = strlen(  new_param->cmd_line) +1;
+  strlcpy(cmdline_copy,   new_param->cmd_line, len);
   char *token = strtok_r((char *)cmdline_copy, (const char *) " " , &str); //get first
-  printf("COMM is %s\n", new_param->cmd_line);
   bool loaded = elf_load(token, &pif.eip, &pif.esp);
-  if (loaded)
-    semaphore_down(&new_param->sema);
-    push_command(new_param->cmd_line, &pif.esp);
-  // semaphore_up(&sem);
+  if (loaded){
+    // printf("GADSFASDSDA\n");
+    push_command(  new_param->cmd_line, &pif.esp);
+  }
+  semaphore_up(new_param->sema);
   palloc_free_page(new_param->cmd_line);
-
   if (!loaded)
     thread_exit();
-
   // Start the user process by simulating a return from an
   // interrupt, implemented by intr_exit (in threads/intr-stubs.S).
   // Because intr_exit takes all of its arguments on the stack in
   // the form of a `struct intr_frame',  we just point the stack
   // pointer (%esp) to our stack frame and jump to it.
+
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&pif) : "memory");
   NOT_REACHED();
 }
 
-// static void start_process_helper(void* param){
-//   Arg* new_param = (Arg *)param;
-//   semaphore_down(&new_param->sema);
-//   start_process(new_param->cmd_line);
-// }
 /*
  * Starts a new kernel thread running a user program loaded from CMDLINE.
  * The new thread may be scheduled (and may even exit) before process_execute()
@@ -194,10 +190,13 @@ process_execute(const char *cmdline)
   strlcpy(cmdline_copy2, cmdline, len);
   char *token = strtok_r((char *)cmdline_copy2, (const char *) " " , &str); //get first
   // Create a Kernel Thread for the new process
-  Arg args = {sem_process, cmdline_copy};
   semaphore_init(&sem_process, 0); //init sem each time thread is created
+  Arg args;
+  args.sema = &sem_process;
+  args.cmd_line = cmdline_copy;
+  // printf("Arg comm is %s\n", args.cmd_line);
   tid_t tid = thread_create(token, PRI_DEFAULT, start_process, (void*)&args);
-  semaphore_up(&sem_process);
+  semaphore_down(&sem_process);
   // CSE130 Lab 3 : The "parent" thread immediately returns after creating
   // the child. To get ANY of the tests passing, you need to synchronise the
   // activity of the parent and child threads.
@@ -217,10 +216,7 @@ process_execute(const char *cmdline)
 int
 process_wait(tid_t child_tid UNUSED)
 {
-  // if(thread_current() != NULL){
-  //   semaphore_down(thread_current()->sem); //wait before thread in critical section finishes
-  // }
-  // semaphore_down(&sem); //wait before thread in critical section finishes
+  timer_sleep(100);
   return -1;
 }
 
@@ -246,8 +242,6 @@ process_exit(void)
     cur->pagedir = NULL;
     pagedir_activate(NULL);
     pagedir_destroy(pd);
-    // semaphore_up(&sem);  //let next thread run
-    // semaphore_up(cur->sem); //up semaphore to allow next thread/process in critical section
   }
 }
 
