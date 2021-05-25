@@ -9,18 +9,60 @@
 
 /*******SOURCES*************
 
-Checking whether/not file is missing
+*****************************BASIC*************************************************************************:
+
+Checking whether/not file is missing(using access(name, F_OK))
 https://stackoverflow.com/questions/230062/whats-the-best-way-to-check-if-a-file-exists-in-c
+
+For file_seek() to take care of Offset logic
 https://www.tutorialspoint.com/c_standard_library/c_function_fseek.htm
-https://www.tutorialspoint.com/c_standard_library/c_function_fread.html
+
+knowing how to use fopen to open a file for different purposes
+https://www.tutorialspoint.com/c_standard_library/c_function_fopen.htm
+
+for fread syntax and following a example
+https://www.tutorialspoint.com/c_standard_library/c_function_fread.htm
+
+for fwrite syntax and following a example
+https://www.tutorialspoint.com/c_standard_library/c_function_fwrite.htm
+
+For knowing how to close a file
+https://www.tutorialspoint.com/c_standard_library/c_function_fclose.htm
+
+*************************ADVANCE*****************************************************************************:
+
+how to use write() with file descriptor
 https://man7.org/linux/man-pages/man2/read.2.html
+
+how to use read() with file descriptor
 https://man7.org/linux/man-pages/man2/open.2.html
-https://www.gnu.org/software/libc/manual/html_node/Accessing-Directories.html
+
+to look up all the flags to pass to open()
+https://www.gnu.org/software/libc/manual/html_node/Open_002dtime-Flags.html
 https://www.gnu.org/software/libc/manual/html_node/Access-Modes.html
+
+************************STRETCH*******************************************************************************:
+Learned what scandir is, what it returns, and how it works. use this to get the list of directories/sort/iterate through list
+
+https://www.gnu.org/software/libc/manual/html_node/Scanning-Directory-Content.html
+
+More specifics on iterating thru list after scandir is called. Used this to make my looping condition, learn how to use the ->d_name
+field, and knew how to free the list properly to avoid mem errors. Also learned how to initialize dirent** struct list
 https://stackoverflow.com/questions/18402428/how-to-properly-use-scandir-in-c
+https://pubs.opengroup.org/onlinepubs/9699919799/functions/alphasort.html
+
+//use this to learn how to filer the stars out of output(filter helper function)
+https://stackoverflow.com/questions/17616362/filtering-scandir-for-filenames-in-folder-c-language
+
+//use this for checking if a file was a directory
 https://man7.org/linux/man-pages/man3/readdir.3.html
 
+//used this to know how to conviniently write to dir using fd
+https://linux.die.net/man/3/dprintf
 
+
+EXTREME:
+Used Supraja's help in TA OH for bitmask logic(expecially for handliling VER and space)
 
 */
 
@@ -207,7 +249,7 @@ int fileman_copy(const char *fsrc, const char *fdest)
  *           tcx
  */
 int filter(const struct dirent * entry){
-  return strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..");
+  return strcmp(entry->d_name, ".") && strcmp(entry->d_name, ".."); //fiter out the dots
 }
 
 void get_dir(int fd, const char *dname, int indent, char* path) {
@@ -219,6 +261,7 @@ void get_dir(int fd, const char *dname, int indent, char* path) {
     }
     dprintf(fd, "%s\n", namelist[i]->d_name); //write entry names and new line
     if(namelist[i]->d_type == DT_DIR){  //if directory
+      //allocate space for previous path length as well as space for new child file length
       char *path_temp = malloc((strlen(path)+1 + strlen(namelist[i]->d_name)+1));
       //make new path
       strcpy(path_temp,  (char *) path);
@@ -275,7 +318,7 @@ void drawTree(int fd, const char *dname, int indent, char* path) {
   struct dirent** namelist;
   int numFiles = scandir(path, &namelist, filter, alphasort); //get list and sort alphabetically
   for(int i = 0; i< numFiles; i++){
-    for(int j = 0; j < indent+4; j++){  // j greater than equal to indent, take care of TEE and ELB, else, know VERT/SPACE
+    for(int j = 0; j <= indent; j++){  // j greater than equal to indent, take care of TEE and ELB, else, know VERT/SPACE
        if(j == indent){    //last 4 spaces check TEE vs ELB logic
             if(i== numFiles-1){    //if last entry then ELB
               dprintf(fd, ELB);
@@ -284,10 +327,7 @@ void drawTree(int fd, const char *dname, int indent, char* path) {
                dprintf(fd, TEE); //else print TEE
             }
             //print 2 HORs and a space to match style
-            dprintf(fd, HOR);
-            dprintf(fd, HOR);
-            dprintf(fd, " ");
-            break;  //no more spaces/verticals needed
+            dprintf(fd, "%s%s ", HOR, HOR);
         }
         else{
           if(bitmask[j]== true){ //if not last file vertical line
@@ -306,23 +346,23 @@ void drawTree(int fd, const char *dname, int indent, char* path) {
       strcat(path_temp,  "/");
       strcat(path_temp, namelist[i]->d_name);
       if(i == numFiles -1){
-        bitmask[indent] = false;  //space
+        bitmask[indent] = false;  //space if last file
       }
       else{
-        bitmask[indent] = true;   //vertical
+        bitmask[indent] = true;   //vertical otherwise
       }
       drawTree(fd, namelist[i]->d_name, indent+4, path_temp);
-      free(path_temp);
+      free(path_temp); //free malloced path
     }
     free(namelist[i]); //free every malloced elem
   }
   if(numFiles != -1){
-    free(namelist);
+    free(namelist); //only free namelist if it's created
    }
 }
 
 void fileman_tree(const int fd, const char *dname)
 {
-  dprintf(fd, "%s\n", dname); //write to fd
+  dprintf(fd, "%s\n", dname); //write very first file to fd
   drawTree(fd,dname,0, (char*)dname);
 }
