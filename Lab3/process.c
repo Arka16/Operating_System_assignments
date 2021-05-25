@@ -64,7 +64,13 @@
  * aligned with the stack pointer ESP. Should only be called after the ELF
  * format binary has been loaded into the heap by elf_load();
  */
-struct semaphore sem;
+// struct semaphore sem;
+
+typedef struct arg_t{
+    struct semaphore sema;
+    void * cmd_line;
+  } Arg;
+
 static void
 push_command(const char *cmdline UNUSED, void **esp)
 {
@@ -123,10 +129,12 @@ push_command(const char *cmdline UNUSED, void **esp)
  * CMDLINE is assumed to contain an executable file name with no arguments.
  * If arguments are passed in CMDLINE, the thread will exit imediately.
  */
+
 static void
 start_process(void *cmdline)
 {
   // Initialize interrupt frame and load executable.
+  Arg* new_param = (Arg *)cmdline;
   struct intr_frame pif;
   memset(&pif, 0, sizeof pif);
 
@@ -136,14 +144,16 @@ start_process(void *cmdline)
 
   char *str = NULL;
   char *cmdline_copy = palloc_get_page(0);
-  int len = strlen(cmdline) +1;
-  strlcpy(cmdline_copy, cmdline, len);
+  int len = strlen(new_param->cmd_line) +1;
+  strlcpy(cmdline_copy,  new_param->cmd_line, len);
   char *token = strtok_r((char *)cmdline_copy, (const char *) " " , &str); //get first
+  printf("COMM is %s\n", new_param->cmd_line);
   bool loaded = elf_load(token, &pif.eip, &pif.esp);
   if (loaded)
-    push_command(cmdline, &pif.esp);
+    semaphore_down(&new_param->sema);
+    push_command(new_param->cmd_line, &pif.esp);
   // semaphore_up(&sem);
-  palloc_free_page(cmdline);
+  palloc_free_page(new_param->cmd_line);
 
   if (!loaded)
     thread_exit();
@@ -157,6 +167,11 @@ start_process(void *cmdline)
   NOT_REACHED();
 }
 
+// static void start_process_helper(void* param){
+//   Arg* new_param = (Arg *)param;
+//   semaphore_down(&new_param->sema);
+//   start_process(new_param->cmd_line);
+// }
 /*
  * Starts a new kernel thread running a user program loaded from CMDLINE.
  * The new thread may be scheduled (and may even exit) before process_execute()
@@ -166,6 +181,7 @@ start_process(void *cmdline)
 tid_t
 process_execute(const char *cmdline)
 {
+  struct semaphore sem_process;
   // Make a copy of CMDLINE to avoid a race condition between the caller and load()
   char *cmdline_copy = palloc_get_page(0);
   if (cmdline_copy == NULL)
@@ -178,10 +194,10 @@ process_execute(const char *cmdline)
   strlcpy(cmdline_copy2, cmdline, len);
   char *token = strtok_r((char *)cmdline_copy2, (const char *) " " , &str); //get first
   // Create a Kernel Thread for the new process
-  semaphore_init(&sem, 0); //init sem each time thread is created
-
-  tid_t tid = thread_create(token, PRI_DEFAULT, start_process, cmdline_copy);
-  semaphore_down(&sem);
+  Arg args = {sem_process, cmdline_copy};
+  semaphore_init(&sem_process, 0); //init sem each time thread is created
+  tid_t tid = thread_create(token, PRI_DEFAULT, start_process, (void*)&args);
+  semaphore_up(&sem_process);
   // CSE130 Lab 3 : The "parent" thread immediately returns after creating
   // the child. To get ANY of the tests passing, you need to synchronise the
   // activity of the parent and child threads.
@@ -230,7 +246,7 @@ process_exit(void)
     cur->pagedir = NULL;
     pagedir_activate(NULL);
     pagedir_destroy(pd);
-    semaphore_up(&sem);  //let next thread run
+    // semaphore_up(&sem);  //let next thread run
     // semaphore_up(cur->sem); //up semaphore to allow next thread/process in critical section
   }
 }
