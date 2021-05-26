@@ -194,7 +194,6 @@ process_execute(const char *cmdline)
   Arg args;
   args.sema = &sem_process;
   args.cmd_line = cmdline_copy;
-  // printf("Arg comm is %s\n", args.cmd_line);
   tid_t tid = thread_create(token, PRI_DEFAULT, start_process, (void*)&args);
   semaphore_down(&sem_process);
   // CSE130 Lab 3 : The "parent" thread immediately returns after creating
@@ -216,7 +215,11 @@ process_execute(const char *cmdline)
 int
 process_wait(tid_t child_tid UNUSED)
 {
-  timer_sleep(100);
+  if(thread_current()!= NULL && thread_current()->child->tid == child_tid){
+     semaphore_down(&thread_current()->child->sem); //wait for thread to die
+      return thread_current()->child->exit_stat;     //return exit status
+  }
+  // timer_sleep(100);
   return -1;
 }
 
@@ -243,6 +246,8 @@ process_exit(void)
     pagedir_activate(NULL);
     pagedir_destroy(pd);
   }
+  semaphore_up(&thread_current()->sem);
+  thread_current()->child = NULL;
 }
 
 /*

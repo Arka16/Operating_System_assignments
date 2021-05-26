@@ -64,6 +64,7 @@
 void sys_exit(int exitcode)
 {
   printf("%s: exit(%d)\n", thread_current()->name, exitcode);
+  thread_current()->exit_stat = exitcode;
   thread_exit();
 }
 
@@ -234,17 +235,17 @@ static void close_handler(struct intr_frame *f)
     }
 }
 
-static int sys_exec(char * fname){
+static tid_t sys_exec(char * fname){
   //if bad pointer or missing
   if((umem_get((uint8_t*)fname) == -1)){
     sys_exit(-1);
   }
-  process_execute(fname);
+  tid_t tid = process_execute(fname);
   struct file * f = filesys_open ((const char *) fname);
   if(f==NULL){ //check if the file existed
     return -1;
   }
-  return 1;
+  return tid;
 }
 
 static void exec_handler(struct intr_frame *f)
@@ -252,6 +253,14 @@ static void exec_handler(struct intr_frame *f)
      const char *fname;
      umem_read(f->esp + 4, &fname, sizeof(fname));
      f->eax = sys_exec((char *)fname);
+}
+
+
+static void wait_handler(struct intr_frame *f)
+{
+     tid_t tid;
+     umem_read(f->esp + 4, &tid, sizeof(tid));
+     f->eax =  process_wait(tid);
 }
 
 /*****************************************************************************************/
@@ -302,7 +311,7 @@ syscall_handler(struct intr_frame *f)
     break;
 
    case SYS_WAIT:
-    // write_handler(f);
+    wait_handler(f);
     break;
    case SYS_FILESIZE:
     filesize_handler(f);
