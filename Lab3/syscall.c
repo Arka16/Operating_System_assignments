@@ -233,21 +233,24 @@ static void close_handler(struct intr_frame *f)
       thread_current()->files[fd] = NULL; //delete file
     }
 }
-// void  child_helper(void * params){
-//   childargs * new_params = (childargs *) params;
-//   process_execute(new_params->cmd_line);
-// }
+
 static int sys_exec(char * fname){
+  //if bad pointer or missing
+  if((umem_get((uint8_t*)fname) == -1)){
+    sys_exit(-1);
+  }
   process_execute(fname);
+  struct file * f = filesys_open ((const char *) fname);
+  if(f==NULL){ //check if the file existed
+    return -1;
+  }
   return 1;
 }
 
 static void exec_handler(struct intr_frame *f)
 {
      const char *fname;
-    //  int fd;
      umem_read(f->esp + 4, &fname, sizeof(fname));
-    //  umem_read(f->esp + 8, &fd, sizeof(fd));
      f->eax = sys_exec((char *)fname);
 }
 
