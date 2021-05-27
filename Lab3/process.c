@@ -136,10 +136,7 @@ static void
 start_process(void *cmdline)  //thread is child
 {
   // Initialize interrupt frame and load executable.
-  // list_init(&thread_current()->parent->children_list);
-  // if(thread_current()->parent != NULL){
-  //   list_push_back(&thread_current()->parent->children_list, &thread_current()->child_elem);
-  // }
+  list_push_back(&thread_current()->parent->children_list, &thread_current()->child_elem);
   Arg* new_param = (Arg *)cmdline;
   struct intr_frame pif;
   memset(&pif, 0, sizeof pif);
@@ -202,7 +199,7 @@ process_execute(const char *cmdline) //thread_current() is parent
   args.sema = &sem_process;
   args.cmd_line = cmdline_copy;
   tid_t tid = thread_create(token, PRI_DEFAULT, start_process, (void*)&args);
-  list_push_back(&thread_current()->children_list, &thread_current()->child->child_elem);
+  // list_push_back(&thread_current()->children_list, &thread_current()->child->child_elem);
   semaphore_down(&sem_process); //down local sem
   // CSE130 Lab 3 : The "parent" thread immediately returns after creating
   // the child. To get ANY of the tests passing, you need to synchronise the
@@ -220,29 +217,42 @@ process_execute(const char *cmdline) //thread_current() is parent
  *
  * This function will be implemented in CSE130 Lab 3. For now, it does nothing.
  */
+int exit_c = 0;
 int
 process_wait(tid_t child_tid UNUSED)
 {
-  if(list_empty(&thread_current()->children_list)){ //if no children present
-     return -1;
-   }
-   struct list_elem *e;
-   for (e = list_begin (&thread_current()->children_list); e != list_end (&thread_current()->children_list);
-          e = list_next (e))
-    {
-      struct thread *t = list_entry (e, struct thread, child_elem); //get next child
-      // printf("GIVEN TID %d\n", child_tid);
-      // printf("CHILD TID %d\n", t->tid);
-      if(t->tid == child_tid){
-          if(t->is_waiting == true || t->is_alive == false){  //if thread was killed before or if child is waiting
-            return -1;
+  // if(list_empty(&thread_current()->children_list)){ //if no children present
+  //    return -1;
+  //  }
+  struct thread *t = NULL;
+  // printf("given tid is %d\n", child_tid);
+  if(!list_empty(&thread_current()->children_list)){
+     struct list_elem *e;
+     for (e = list_begin (&thread_current()->children_list); e != list_end (&thread_current()->children_list);
+            e = list_next (e))
+      {
+        t = list_entry (e, struct thread, child_elem); //get next child
+        // printf("t tid is %d\n", t->tid);
+        if(t->tid == child_tid){
+            break;
           }
-          t->is_waiting = true;
-          semaphore_down(&t->sem); //wait for thread to die
-          return t->exit_stat;     //return exit status
-        }
+      }
     }
-    return -1; //if not child of current process/invalid tid
+    //  printf("t exit stat is %d\n", t->exit_stat);
+    if(t == NULL){    //if child doesn't exist
+      return exit_c;
+    }
+    if(t->is_waiting){   //if child is waiting
+      return -1;
+    }
+    if(!t->is_waiting){
+      t->is_waiting = true;
+    }
+    if(t->is_alive){    //if thread is active
+      semaphore_down(&t->sem); //wait for thread to die
+      // return t->exit_stat;     //return exit status
+    }
+    return exit_c;     //return exit status
 }
 
 /* Free the current process's resources. */
@@ -267,25 +277,16 @@ process_exit(void)
     pagedir_activate(NULL);
     pagedir_destroy(pd);
   }
-  //  thread_current()->is_waiting =false;
   //remove all children
-   struct list_elem *e;
- semaphore_up(&thread_current()->sem);  //up current's sem
-  for (e = list_begin (&thread_current()->parent->children_list); e != list_end (&thread_current()->parent->children_list);
-        e = list_next (e))
-    {
-      struct thread *t = list_entry(e, struct thread ,child_elem);
-      if(t->tid == thread_current()->tid){
-         list_remove(&t->child_elem);
-
-         t->is_waiting = false;
-         t->is_alive = false; //label thread as dead
+  while(!list_empty(&thread_current()->children_list)){
+      struct thread *t = list_entry(list_pop_front(&thread_current()->children_list), struct thread ,child_elem);
+      if(t->is_alive){
+        t->parent = NULL;
       }
     }
-  // while(!list_empty(&thread_current()->children_list)){
-  //     struct thread *t = list_entry(list_pop_front(&thread_current()->children_list), struct thread, child_elem);
-  //     t->parent = NULL;  //set parent to null
-  // }
+  list_remove(&thread_current()->child_elem); //remove thread from it's parent list
+  exit_c = thread_current()->exit_stat;
+  semaphore_up(&thread_current()->sem);  //up current's sem
 }
 
 /*
