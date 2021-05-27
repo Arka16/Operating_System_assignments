@@ -217,30 +217,34 @@ process_execute(const char *cmdline) //thread_current() is parent
  *
  * This function will be implemented in CSE130 Lab 3. For now, it does nothing.
  */
-int exit_c = 0;
+int exit_c[30];
+
 int
 process_wait(tid_t child_tid UNUSED)
 {
-  // if(list_empty(&thread_current()->children_list)){ //if no children present
-  //    return -1;
-  //  }
   struct thread *t = NULL;
-  // printf("given tid is %d\n", child_tid);
+  int ex_code;
+  if(!thread_current()->is_alive){
+    return -1;
+  }
+   if(child_tid < 0 || child_tid > 100){
+      return -1;
+    }
   if(!list_empty(&thread_current()->children_list)){
      struct list_elem *e;
      for (e = list_begin (&thread_current()->children_list); e != list_end (&thread_current()->children_list);
             e = list_next (e))
       {
         t = list_entry (e, struct thread, child_elem); //get next child
-        // printf("t tid is %d\n", t->tid);
         if(t->tid == child_tid){
             break;
           }
       }
     }
-    //  printf("t exit stat is %d\n", t->exit_stat);
+    ex_code = exit_c[child_tid];
+    exit_c[child_tid] = -1;
     if(t == NULL){    //if child doesn't exist
-      return exit_c;
+      return ex_code;
     }
     if(t->is_waiting){   //if child is waiting
       return -1;
@@ -250,9 +254,8 @@ process_wait(tid_t child_tid UNUSED)
     }
     if(t->is_alive){    //if thread is active
       semaphore_down(&t->sem); //wait for thread to die
-      // return t->exit_stat;     //return exit status
     }
-    return exit_c;     //return exit status
+    return exit_c[child_tid];     //return exit status
 }
 
 /* Free the current process's resources. */
@@ -285,7 +288,7 @@ process_exit(void)
       }
     }
   list_remove(&thread_current()->child_elem); //remove thread from it's parent list
-  exit_c = thread_current()->exit_stat;
+  exit_c[thread_current()->tid] = thread_current()->exit_stat;
   semaphore_up(&thread_current()->sem);  //up current's sem
 }
 
