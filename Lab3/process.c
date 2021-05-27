@@ -58,6 +58,7 @@
 #include "userprog/process.h"
 #include "devices/timer.h"
 #include "threads/semaphore.h"
+#include <list.h>
 
 /*
  * Push the command and arguments found in CMDLINE onto the stack, word
@@ -132,18 +133,19 @@ push_command(const char *cmdline UNUSED, void **esp)
  */
 
 static void
-start_process(void *cmdline)
+start_process(void *cmdline)  //thread is child
 {
   // Initialize interrupt frame and load executable.
+  // list_init(&thread_current()->parent->children_list);
+  // if(thread_current()->parent != NULL){
+  //   list_push_back(&thread_current()->parent->children_list, &thread_current()->child_elem);
+  // }
   Arg* new_param = (Arg *)cmdline;
-  // printf("COMM is %s\n",   new_param->cmd_line);
   struct intr_frame pif;
   memset(&pif, 0, sizeof pif);
-
   pif.gs = pif.fs = pif.es = pif.ds = pif.ss = SEL_UDSEG;
   pif.cs = SEL_UCSEG;
   pif.eflags = FLAG_IF | FLAG_MBS;
-
   char *str = NULL;
   char *cmdline_copy = palloc_get_page(0);
   int len = strlen(  new_param->cmd_line) +1;
@@ -151,10 +153,10 @@ start_process(void *cmdline)
   char *token = strtok_r((char *)cmdline_copy, (const char *) " " , &str); //get first
   bool loaded = elf_load(token, &pif.eip, &pif.esp);
   if (loaded){
-    // printf("GADSFASDSDA\n");
-    push_command(  new_param->cmd_line, &pif.esp);
+    push_command( new_param->cmd_line, &pif.esp);
   }
-  semaphore_up(new_param->sema);
+  semaphore_up(new_param->sema);  //up local sem
+   //add child to it's parent's children list
   palloc_free_page(new_param->cmd_line);
   if (!loaded)
     thread_exit();
@@ -163,7 +165,6 @@ start_process(void *cmdline)
   // Because intr_exit takes all of its arguments on the stack in
   // the form of a `struct intr_frame',  we just point the stack
   // pointer (%esp) to our stack frame and jump to it.
-
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&pif) : "memory");
   NOT_REACHED();
 }
@@ -175,14 +176,20 @@ start_process(void *cmdline)
  * could not be created.
  */
 tid_t
-process_execute(const char *cmdline)
+process_execute(const char *cmdline) //thread_current() is parent
 {
+  //  struct list_elem *e;
+  //  for (e = list_begin (&thread_current()->children_list); e != list_end (&thread_current()->children_list);
+  //       e = list_next (e))
+  //   {
+  //     struct thread *t = list_entry (e, struct thread, child_elem);
+  //     t->parent = thread_current();  //set child's parent
+  //   }
   struct semaphore sem_process;
   // Make a copy of CMDLINE to avoid a race condition between the caller and load()
   char *cmdline_copy = palloc_get_page(0);
   if (cmdline_copy == NULL)
     return TID_ERROR;
-
   strlcpy(cmdline_copy, cmdline, PGSIZE);
   char *str = NULL;
   char *cmdline_copy2 = palloc_get_page(0);
@@ -190,12 +197,13 @@ process_execute(const char *cmdline)
   strlcpy(cmdline_copy2, cmdline, len);
   char *token = strtok_r((char *)cmdline_copy2, (const char *) " " , &str); //get first
   // Create a Kernel Thread for the new process
-  semaphore_init(&sem_process, 0); //init sem each time thread is created
+  semaphore_init(&sem_process, 0); //init local sem
   Arg args;
   args.sema = &sem_process;
   args.cmd_line = cmdline_copy;
   tid_t tid = thread_create(token, PRI_DEFAULT, start_process, (void*)&args);
-  semaphore_down(&sem_process);
+  list_push_back(&thread_current()->children_list, &thread_current()->child->child_elem);
+  semaphore_down(&sem_process); //down local sem
   // CSE130 Lab 3 : The "parent" thread immediately returns after creating
   // the child. To get ANY of the tests passing, you need to synchronise the
   // activity of the parent and child threads.
@@ -215,12 +223,26 @@ process_execute(const char *cmdline)
 int
 process_wait(tid_t child_tid UNUSED)
 {
-  if(thread_current()!= NULL && thread_current()->child->tid == child_tid){
-     semaphore_down(&thread_current()->child->sem); //wait for thread to die
-      return thread_current()->child->exit_stat;     //return exit status
-  }
-  // timer_sleep(100);
-  return -1;
+  if(list_empty(&thread_current()->children_list)){ //if no children present
+     return -1;
+   }
+   struct list_elem *e;
+   for (e = list_begin (&thread_current()->children_list); e != list_end (&thread_current()->children_list);
+          e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, child_elem); //get next child
+      // printf("GIVEN TID %d\n", child_tid);
+      // printf("CHILD TID %d\n", t->tid);
+      if(t->tid == child_tid){
+          if(t->is_waiting == true || t->is_alive == false){  //if thread was killed before or if child is waiting
+            return -1;
+          }
+          t->is_waiting = true;
+          semaphore_down(&t->sem); //wait for thread to die
+          return t->exit_stat;     //return exit status
+        }
+    }
+    return -1; //if not child of current process/invalid tid
 }
 
 /* Free the current process's resources. */
@@ -229,7 +251,6 @@ process_exit(void)
 {
   struct thread *cur = thread_current();
   uint32_t *pd;
-
   // Destroy the current process's page directory and switch back
   // to the kernel-only page directory.
   pd = cur->pagedir;
@@ -246,8 +267,25 @@ process_exit(void)
     pagedir_activate(NULL);
     pagedir_destroy(pd);
   }
-  semaphore_up(&thread_current()->sem);
-  thread_current()->child = NULL;
+  //  thread_current()->is_waiting =false;
+  //remove all children
+   struct list_elem *e;
+ semaphore_up(&thread_current()->sem);  //up current's sem
+  for (e = list_begin (&thread_current()->parent->children_list); e != list_end (&thread_current()->parent->children_list);
+        e = list_next (e))
+    {
+      struct thread *t = list_entry(e, struct thread ,child_elem);
+      if(t->tid == thread_current()->tid){
+         list_remove(&t->child_elem);
+
+         t->is_waiting = false;
+         t->is_alive = false; //label thread as dead
+      }
+    }
+  // while(!list_empty(&thread_current()->children_list)){
+  //     struct thread *t = list_entry(list_pop_front(&thread_current()->children_list), struct thread, child_elem);
+  //     t->parent = NULL;  //set parent to null
+  // }
 }
 
 /*
